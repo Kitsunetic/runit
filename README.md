@@ -7,6 +7,14 @@ A **simple** command line tool for scheduling multiple commands with limited res
 
 
 
+# Install
+
+```sh
+pip install git+https://github.com/Kitsunetic/runit.git
+```
+
+
+
 # Example
 
 For example, I have 4 GPUs and 20 test scripts to execute.
