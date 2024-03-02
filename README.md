@@ -9,8 +9,9 @@ A **simple** command line tool for scheduling multiple commands with limited res
 
 # Install
 
+<!-- pip install git+https://github.com/Kitsunetic/runit.git -->
 ```sh
-pip install git+https://github.com/Kitsunetic/runit.git
+pip install runit-parallel
 ```
 
 
