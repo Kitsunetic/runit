@@ -18,7 +18,7 @@ def getopt():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", type=int, default=1)
     parser.add_argument("--log", type=str)
-    # parser.add_argument("--cmd", type=str)
+    parser.add_argument("--cmd", type=str)
     args, unknown = parser.parse_known_args()
 
     param_group = defaultdict(list)
@@ -101,6 +101,8 @@ def t_func(rank, args, **t_kwargs):
 
 
 def main():
+    print("hihi")
+
     args, param_group, opt_group = getopt()
     our_print("< param groups >")
     print_param_group(param_group)
@@ -116,18 +118,18 @@ def main():
         return
     n_opt = args.n_opt = max([len(k) for k in opt_group.values()])
 
-    # if args.cmd is not None:
-    #     cmd = args.cmd
-    # else:
-    print()
-    our_print("< type command >")
-    x = input()
-    cmd = [x]
-    while x[-1] == "\\":
-        cmd[-1] = cmd[-1][:-1]
+    if args.cmd is not None:
+        cmd = args.cmd
+    else:
+        print()
+        our_print("< type command >")
         x = input()
-        cmd.append(x)
-    cmd = "\n".join(cmd)
+        cmd = [x]
+        while x[-1] == "\\":
+            cmd[-1] = cmd[-1][:-1]
+            x = input()
+            cmd.append(x)
+        cmd = "\n".join(cmd)
 
     threads = []
     for i in range(n_opt):
