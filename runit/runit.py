@@ -15,11 +15,30 @@ cmd = None
 
 
 def getopt():
+    # 1. Manually handle the '--' separator
+    argv = sys.argv[1:]
+    cmd_from_dash = None
+
+    if "--" in argv:
+        idx = argv.index("--")
+        # Everything after '--' is the command
+        cmd_parts = argv[idx + 1 :]
+        # Everything before '--' are runit args
+        argv = argv[:idx]
+        # Join command parts back into a string
+        cmd_from_dash = " ".join(cmd_parts)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", type=int, default=1)
     parser.add_argument("--log", type=str)
     parser.add_argument("--cmd", type=str)
-    args, unknown = parser.parse_known_args()
+
+    # 2. Pass the sliced argv explicitly to parse_known_args
+    args, unknown = parser.parse_known_args(argv)
+
+    # 3. If we found a command after '--', assign it to args.cmd
+    if cmd_from_dash:
+        args.cmd = cmd_from_dash
 
     param_group = defaultdict(list)
     opt_group = defaultdict(list)
