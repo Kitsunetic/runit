@@ -7,7 +7,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="runit-parallel",
-    version="0.0.5",
+    version="0.0.6",
     description="runit: scheduling multiple commands with limited devices",
     author="Kitsunetic",
     author_email="jh.shim.gg@gmail.com",
