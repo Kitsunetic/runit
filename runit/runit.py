@@ -60,7 +60,6 @@ def getopt():
     parser.add_argument("-n", type=int, default=1, help="Number of threads")
     parser.add_argument("--log", type=str, help="Log file path format")
     parser.add_argument("--cmd", type=str, help="Command to execute")
-    # 타임아웃 인자 추가 (초 단위)
     parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for each command")
 
     args, unknown = parser.parse_known_args(argv)
@@ -143,7 +142,7 @@ def t_func(rank, args, **t_kwargs):
             outpipe = open(log_file, "a")
 
         cmd_t = cmd_t.replace("\n", " ")
-        outpipe.write(cmd_t + "\n")
+        # outpipe.write(cmd_t + "\n")
         outpipe.flush()
 
         # 타임아웃 예외 처리 블록 추가
