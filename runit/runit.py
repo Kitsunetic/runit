@@ -14,6 +14,46 @@ q = Queue()
 cmd = None
 
 
+def expand_value(val):
+    """
+    1. @파일명: 텍스트 파일의 각 줄을 읽어 리스트로 반환
+    2. 시작:끝 또는 시작:끝:스텝: Pythonic하게 범위를 풀어서 리스트로 반환
+    3. 일반 값: 그대로 리스트로 감싸서 반환
+    """
+    # 1. 파일에서 읽기 (@파일명)
+    if val.startswith("@"):
+        file_path = Path(val[1:])
+        if file_path.is_file():
+            with open(file_path, "r", encoding="utf-8") as f:
+                return [line.strip() for line in f if line.strip()]
+
+    # 2. 파이썬 슬라이싱 스타일 범위 및 스텝 처리 (시작:끝 또는 시작:끝:스텝)
+    if ":" in val:
+        parts = val.split(":")
+        try:
+            # 시작:끝 (예: 1:80) -> 스텝 기본값 1
+            if len(parts) == 2:
+                start, end = int(parts[0]), int(parts[1])
+                # 역방향도 지원
+                step = 1 if start <= end else -1
+                return [str(i) for i in range(start, end + step, step)]
+
+            # 시작:끝:스텝 (예: 0:80000:1000)
+            elif len(parts) == 3:
+                start, end, step = int(parts[0]), int(parts[1]), int(parts[2])
+                # CLI 직관성을 위해 끝값(end)을 포함하도록 처리
+                if step > 0:
+                    return [str(i) for i in range(start, end + 1, step)]
+                elif step < 0:
+                    return [str(i) for i in range(start, end - 1, step)]
+        except ValueError:
+            # 숫자로 변환할 수 없는 문자열(예: 시간 형식 12:30:00)이 섞여 있으면 무시하고 원본 반환
+            pass
+
+    # 3. 위 조건에 해당하지 않는 일반 값이면 그대로 반환
+    return [val]
+
+
 def getopt():
     # 1. Manually handle the '--' separator
     argv = sys.argv[1:]
@@ -50,10 +90,12 @@ def getopt():
         elif k.startswith("-"):
             key, flag = k[1:], False
         elif key is not None:
+            # 확장된 값들을 extend로 이어 붙임
+            expanded_vals = expand_value(k)
             if flag:
-                param_group[key].append(k)
+                param_group[key].extend(expanded_vals)
             else:
-                opt_group[key].append(k)
+                opt_group[key].extend(expanded_vals)
 
     if not opt_group:
         our_print("need at least an option")
@@ -77,7 +119,12 @@ def len_int(x):
 def print_param_group(pg):
     maxlen = max([len(k) for k in pg])
     for k, v in pg.items():
-        our_print(("{k:%d}: {v}" % maxlen).format(k=k, v=v))
+        # 리스트가 너무 길면 터미널 출력이 지저분해지므로 앞뒤 일부만 출력하도록 개선할 수도 있지만, 우선 유지합니다.
+        if len(v) > 10:
+            display_v = f"[{v[0]}, {v[1]}, ..., {v[-2]}, {v[-1]}] (total: {len(v)})"
+        else:
+            display_v = str(v)
+        our_print(("{k:%d}: {v}" % maxlen).format(k=k, v=display_v))
 
 
 def check_param_group(pg):
