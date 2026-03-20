@@ -163,8 +163,6 @@ def t_func(rank, args, **t_kwargs):
 
 
 def main():
-    print("hihi")
-
     args, param_group, opt_group = getopt()
     our_print("< param groups >")
     print_param_group(param_group)
