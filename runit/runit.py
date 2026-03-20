@@ -20,63 +20,51 @@ def expand_value(val):
     2. 시작:끝 또는 시작:끝:스텝: Pythonic하게 범위를 풀어서 리스트로 반환
     3. 일반 값: 그대로 리스트로 감싸서 반환
     """
-    # 1. 파일에서 읽기 (@파일명)
     if val.startswith("@"):
         file_path = Path(val[1:])
         if file_path.is_file():
             with open(file_path, "r", encoding="utf-8") as f:
                 return [line.strip() for line in f if line.strip()]
 
-    # 2. 파이썬 슬라이싱 스타일 범위 및 스텝 처리 (시작:끝 또는 시작:끝:스텝)
     if ":" in val:
         parts = val.split(":")
         try:
-            # 시작:끝 (예: 1:80) -> 스텝 기본값 1
             if len(parts) == 2:
                 start, end = int(parts[0]), int(parts[1])
-                # 역방향도 지원
                 step = 1 if start <= end else -1
                 return [str(i) for i in range(start, end + step, step)]
 
-            # 시작:끝:스텝 (예: 0:80000:1000)
             elif len(parts) == 3:
                 start, end, step = int(parts[0]), int(parts[1]), int(parts[2])
-                # CLI 직관성을 위해 끝값(end)을 포함하도록 처리
                 if step > 0:
                     return [str(i) for i in range(start, end + 1, step)]
                 elif step < 0:
                     return [str(i) for i in range(start, end - 1, step)]
         except ValueError:
-            # 숫자로 변환할 수 없는 문자열(예: 시간 형식 12:30:00)이 섞여 있으면 무시하고 원본 반환
             pass
 
-    # 3. 위 조건에 해당하지 않는 일반 값이면 그대로 반환
     return [val]
 
 
 def getopt():
-    # 1. Manually handle the '--' separator
     argv = sys.argv[1:]
     cmd_from_dash = None
 
     if "--" in argv:
         idx = argv.index("--")
-        # Everything after '--' is the command
         cmd_parts = argv[idx + 1 :]
-        # Everything before '--' are runit args
         argv = argv[:idx]
-        # Join command parts back into a string
         cmd_from_dash = " ".join(cmd_parts)
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-n", type=int, default=1)
-    parser.add_argument("--log", type=str)
-    parser.add_argument("--cmd", type=str)
+    parser.add_argument("-n", type=int, default=1, help="Number of threads")
+    parser.add_argument("--log", type=str, help="Log file path format")
+    parser.add_argument("--cmd", type=str, help="Command to execute")
+    # 타임아웃 인자 추가 (초 단위)
+    parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for each command")
 
-    # 2. Pass the sliced argv explicitly to parse_known_args
     args, unknown = parser.parse_known_args(argv)
 
-    # 3. If we found a command after '--', assign it to args.cmd
     if cmd_from_dash:
         args.cmd = cmd_from_dash
 
@@ -90,7 +78,6 @@ def getopt():
         elif k.startswith("-"):
             key, flag = k[1:], False
         elif key is not None:
-            # 확장된 값들을 extend로 이어 붙임
             expanded_vals = expand_value(k)
             if flag:
                 param_group[key].extend(expanded_vals)
@@ -119,7 +106,6 @@ def len_int(x):
 def print_param_group(pg):
     maxlen = max([len(k) for k in pg])
     for k, v in pg.items():
-        # 리스트가 너무 길면 터미널 출력이 지저분해지므로 앞뒤 일부만 출력하도록 개선할 수도 있지만, 우선 유지합니다.
         if len(v) > 10:
             display_v = f"[{v[0]}, {v[1]}, ..., {v[-2]}, {v[-1]}] (total: {len(v)})"
         else:
@@ -157,10 +143,20 @@ def t_func(rank, args, **t_kwargs):
             outpipe = open(log_file, "a")
 
         cmd_t = cmd_t.replace("\n", " ")
-        outpipe.write(cmd_t)
+        outpipe.write(cmd_t + "\n")
         outpipe.flush()
 
-        sp.run(cmd_t, shell=True, stdout=outpipe, stderr=outpipe, stdin=sp.DEVNULL)
+        # 타임아웃 예외 처리 블록 추가
+        try:
+            sp.run(cmd_t, shell=True, stdout=outpipe, stderr=outpipe, stdin=sp.DEVNULL, timeout=args.timeout)
+        except sp.TimeoutExpired:
+            # 타임아웃 발생 시 경고 출력 및 로그 기록
+            timeout_msg = f"\n[TIMEOUT WARNING] Command killed after {args.timeout} seconds!\n"
+            our_print(f"[thread {rank}] TIMEOUT ({args.timeout}s): {cmd_t}")
+
+            if outpipe != sys.stdout:
+                outpipe.write(timeout_msg)
+                outpipe.flush()
 
         if outpipe != sys.stdout:
             outpipe.close()
