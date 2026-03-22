@@ -11,7 +11,6 @@ from queue import Queue
 
 EXIT_FLAG = 7150297589271389562308946091234730894710298437
 q = Queue()
-cmd = None
 
 
 def expand_value(val):
@@ -56,8 +55,8 @@ def getopt():
         argv = argv[:idx]
         cmd_from_dash = " ".join(cmd_parts)
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-n", type=int, default=1, help="Number of threads")
+    parser = argparse.ArgumentParser(description="runit: scheduling multiple commands with limited resources")
+    # 기존에 있던 -n 파라미터는 데드 코드이므로 삭제되었습니다.
     parser.add_argument("--log", type=str, help="Log file path format")
     parser.add_argument("--cmd", type=str, help="Command to execute")
     parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for each command")
@@ -84,8 +83,8 @@ def getopt():
                 opt_group[key].extend(expanded_vals)
 
     if not opt_group:
-        our_print("need at least an option")
-        exit(1)
+        our_print("Error: Need at least one option (e.g., -g 0 1)")
+        sys.exit(1)
 
     return args, param_group, opt_group
 
@@ -99,7 +98,7 @@ def our_print(*msgs, **kwargs):
 
 
 def len_int(x):
-    return math.ceil(math.log10(x + 1))
+    return math.ceil(math.log10(x + 1)) if x > 0 else 1
 
 
 def print_param_group(pg):
@@ -113,6 +112,8 @@ def print_param_group(pg):
 
 
 def check_param_group(pg):
+    if not pg:
+        return True
     lens = [len(pg[k]) for k in pg]
     maxlen = max(lens)
     is_ok = [k == maxlen for k in lens]
@@ -124,12 +125,13 @@ def t_func(rank, args, **t_kwargs):
         x = q.get()
         if x == EXIT_FLAG:
             break
-        i, cmd, p_kwargs = x
+
+        i, cmd_str, p_kwargs = x
         kwargs = {}
         kwargs.update(t_kwargs)
         kwargs.update(p_kwargs)
 
-        cmd_t = cmd.format(**kwargs)
+        cmd_t = cmd_str.format(**kwargs)
         l = len_int(args.n_params - 1)
         msg = "[thread {rank} [{i:0%dd}/{n_params:0%dd}]] {cmd_t}" % (l, l)
         our_print(msg.format(rank=rank, i=i + 1, n_params=args.n_params, cmd_t=cmd_t))
@@ -142,14 +144,11 @@ def t_func(rank, args, **t_kwargs):
             outpipe = open(log_file, "a")
 
         cmd_t = cmd_t.replace("\n", " ")
-        # outpipe.write(cmd_t + "\n")
         outpipe.flush()
 
-        # 타임아웃 예외 처리 블록 추가
         try:
             sp.run(cmd_t, shell=True, stdout=outpipe, stderr=outpipe, stdin=sp.DEVNULL, timeout=args.timeout)
         except sp.TimeoutExpired:
-            # 타임아웃 발생 시 경고 출력 및 로그 기록
             timeout_msg = f"\n[TIMEOUT WARNING] Command killed after {args.timeout} seconds!\n"
             our_print(f"[thread {rank}] TIMEOUT ({args.timeout}s): {cmd_t}")
 
@@ -163,32 +162,38 @@ def t_func(rank, args, **t_kwargs):
 
 def main():
     args, param_group, opt_group = getopt()
+
     our_print("< param groups >")
-    print_param_group(param_group)
-    if not check_param_group(param_group):
-        our_print("The number of parameters is not equal")
-        return
-    n_params = args.n_params = max([len(k) for k in param_group.values()]) if param_group else 0
+    if param_group:
+        print_param_group(param_group)
+        if not check_param_group(param_group):
+            our_print("Error: The number of parameters is not equal across groups.")
+            sys.exit(1)
+    else:
+        our_print("No parameters provided.")
+
+    args.n_params = max([len(k) for k in param_group.values()]) if param_group else 0
 
     our_print("< opt groups >")
     print_param_group(opt_group)
     if not check_param_group(opt_group):
-        our_print("The number of options is not equal")
-        return
-    n_opt = args.n_opt = max([len(k) for k in opt_group.values()])
+        our_print("Error: The number of options is not equal across groups.")
+        sys.exit(1)
+
+    n_opt = max([len(k) for k in opt_group.values()])
 
     if args.cmd is not None:
-        cmd = args.cmd
+        cmd_str = args.cmd
     else:
         print()
         our_print("< type command >")
         x = input()
-        cmd = [x]
-        while x[-1] == "\\":
-            cmd[-1] = cmd[-1][:-1]
+        cmd_lines = [x]
+        while x and x[-1] == "\\":
+            cmd_lines[-1] = cmd_lines[-1][:-1]
             x = input()
-            cmd.append(x)
-        cmd = "\n".join(cmd)
+            cmd_lines.append(x)
+        cmd_str = "\n".join(cmd_lines)
 
     threads = []
     for i in range(n_opt):
@@ -197,12 +202,13 @@ def main():
         threads.append(t)
         t.start()
 
-    for i in range(n_params):
+    for i in range(args.n_params):
         p_kwargs = {k: v[i] for k, v in param_group.items()}
-        q.put((i, cmd, p_kwargs))
+        q.put((i, cmd_str, p_kwargs))
 
     for t in threads:
         q.put(EXIT_FLAG)
+
     for t in threads:
         t.join()
 
