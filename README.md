@@ -97,3 +97,30 @@ Use --timeout <seconds> to automatically kill tasks that hang or take too long t
 # Automatically kills any task taking longer than 3600 seconds (1 hour)
 runit -g 0 1 --dataset a b c --timeout 3600 --cmd "python train.py --data {dataset}"
 ```
+
+
+# 🧪 Testing & Verification
+
+### Scenario A: Basic Parallelism & Ranges
+
+Run 5 tasks using 3 threads, where each task sleeps for 1-5 seconds.
+
+```sh
+python runit/runit.py -n 3 --val 1 2 1 2 1 2 -- python test_script.py -w {n} -a {val}
+```
+
+### Scenario B: Resource Mapping & Logging
+
+Map tasks to specific "GPU" IDs and save output to log files.
+
+```sh
+python runit/runit.py -g 0 1 --task_id A B C D -- python test_script.py -w GPU_{g} -a 2
+```
+
+### Scenario C: Timeout Verification
+
+Force a task to fail if it takes longer than 2 seconds.
+
+```sh
+python runit/runit.py -n 2 --val 1:3 -- python test_script.py -w {n} -a {val}
+```

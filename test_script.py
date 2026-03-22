@@ -1,15 +1,13 @@
-"""
-PYTHONPATH=`pwd` python runit/runit.py -c 0 1 --a 4 5 6 7 -- python test_script.py -a {a}
-"""
-
+# test_script.py
 import argparse
-import sys
 import time
+import sys
 
-print(sys.argv)
+parser = argparse.ArgumentParser()
+parser.add_argument("-a", "--val", type=int, default=1)
+parser.add_argument("-w", "--worker", type=str, default="0")
+args = parser.parse_args()
 
-P = argparse.ArgumentParser()
-P.add_argument("-a", type=int, default=0)
-args = P.parse_args()
-time.sleep(args.a)
-print(args.a)
+print(f"Worker {args.worker} starting task with value {args.val}")
+time.sleep(args.val)
+print(f"Worker {args.worker} finished value {args.val}")
