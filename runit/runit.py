@@ -104,6 +104,8 @@ def getopt():
     parser = argparse.ArgumentParser(description="runit: scheduling multiple commands with limited resources")
     parser.add_argument(
         "-n",
+        "--n-threads",
+        dest="n_threads",
         type=int,
         help="Number of parallel threads (used if no worker options are provided)",
     )
