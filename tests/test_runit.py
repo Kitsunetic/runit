@@ -1,9 +1,9 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
-from runit.runit import getopt
+from runit.runit import EXIT_FLAG, getopt, q, t_func
 
 
 class GetoptTests(unittest.TestCase):
@@ -84,6 +84,48 @@ class GetoptTests(unittest.TestCase):
         self.assertEqual(args.n_threads, 2)
         self.assertEqual(param_group["item"], ["x", "y"])
         self.assertEqual(opt_group["n"], ["0", "1"])
+
+    def test_inline_command_parts_are_preserved(self):
+        argv = [
+            "runit",
+            "-n",
+            "1",
+            "--item",
+            "Walk In The Air Idle.fbx",
+            "--",
+            "python",
+            "script.py",
+            "--rel_path",
+            "{item}",
+        ]
+
+        with patch("sys.argv", argv):
+            args, _, _ = getopt()
+
+        self.assertEqual(
+            args.inline_cmd_parts,
+            ["python", "script.py", "--rel_path", "{item}"],
+        )
+
+
+class ExecutionTests(unittest.TestCase):
+    def test_inline_command_runs_placeholder_with_spaces_as_single_argument(self):
+        args = type("Args", (), {"n_params": 1, "log": None, "timeout": None})()
+        cmd_spec = ["python", "script.py", "--rel_path", "{item}"]
+
+        with patch("runit.runit.sp.run") as mock_run:
+            q.put((0, cmd_spec, {"item": "Walk In The Air Idle.fbx"}))
+            q.put(EXIT_FLAG)
+            t_func(0, args, n="0")
+
+        mock_run.assert_called_once_with(
+            ["python", "script.py", "--rel_path", "Walk In The Air Idle.fbx"],
+            shell=False,
+            stdout=ANY,
+            stderr=ANY,
+            stdin=ANY,
+            timeout=None,
+        )
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 
 import argparse
 import math
+import shlex
 import subprocess as sp
 import sys
 import threading
@@ -87,6 +88,7 @@ def expand_opt_value(val):
 def getopt():
     argv = sys.argv[1:]
     inline_cmd = None
+    inline_cmd_parts = None
 
     if "--cmd" in argv:
         our_print("Error: `--cmd` is no longer supported. Put the command after `--`.")
@@ -99,6 +101,7 @@ def getopt():
         if not cmd_parts:
             our_print("Error: Command must follow `--`.")
             sys.exit(1)
+        inline_cmd_parts = cmd_parts
         inline_cmd = " ".join(cmd_parts)
 
     parser = argparse.ArgumentParser(description="runit: scheduling multiple commands with limited resources")
@@ -126,6 +129,7 @@ def getopt():
 
     args, unknown = parser.parse_known_args(argv)
     args.inline_cmd = inline_cmd
+    args.inline_cmd_parts = inline_cmd_parts
 
     if args.world_size < 1:
         our_print("Error: --world_size must be >= 1.")
@@ -199,18 +203,23 @@ def t_func(rank, args, **t_kwargs):
         if x == EXIT_FLAG:
             break
 
-        i, cmd_str, p_kwargs = x
+        i, cmd_spec, p_kwargs = x
         full_kwargs = {**t_kwargs, **p_kwargs}
 
         try:
-            cmd_t = cmd_str.format(**full_kwargs)
+            if isinstance(cmd_spec, list):
+                cmd_t = [part.format(**full_kwargs) for part in cmd_spec]
+                cmd_display = shlex.join(cmd_t)
+            else:
+                cmd_t = cmd_spec.format(**full_kwargs)
+                cmd_display = cmd_t
         except KeyError as e:
             our_print(f"Error: Missing placeholder {e} in command.")
             break
 
         l = len_int(args.n_params - 1 if args.n_params > 0 else 0)
         msg = "[thread {rank} [{i:0%dd}/{n_params:0%dd}]] {cmd_t}" % (l, l)
-        our_print(msg.format(rank=rank, i=i + 1, n_params=args.n_params, cmd_t=cmd_t))
+        our_print(msg.format(rank=rank, i=i + 1, n_params=args.n_params, cmd_t=cmd_display))
 
         outpipe = sys.stdout
         if args.log:
@@ -219,16 +228,26 @@ def t_func(rank, args, **t_kwargs):
             outpipe = open(log_file, "a", encoding="utf-8")
 
         try:
-            sp.run(
-                cmd_t.replace("\n", " "),
-                shell=True,
-                stdout=outpipe,
-                stderr=outpipe,
-                stdin=sp.DEVNULL,
-                timeout=args.timeout,
-            )
+            if isinstance(cmd_t, list):
+                sp.run(
+                    cmd_t,
+                    shell=False,
+                    stdout=outpipe,
+                    stderr=outpipe,
+                    stdin=sp.DEVNULL,
+                    timeout=args.timeout,
+                )
+            else:
+                sp.run(
+                    cmd_t.replace("\n", " "),
+                    shell=True,
+                    stdout=outpipe,
+                    stderr=outpipe,
+                    stdin=sp.DEVNULL,
+                    timeout=args.timeout,
+                )
         except sp.TimeoutExpired:
-            our_print(f"[thread {rank}] TIMEOUT ({args.timeout}s): {cmd_t}")
+            our_print(f"[thread {rank}] TIMEOUT ({args.timeout}s): {cmd_display}")
         finally:
             if outpipe != sys.stdout:
                 outpipe.close()
@@ -256,8 +275,10 @@ def main():
 
     n_opt = max(len(v) for v in opt_group.values())
 
-    if args.inline_cmd:
-        cmd_str = args.inline_cmd
+    if args.inline_cmd_parts:
+        cmd_spec = args.inline_cmd_parts
+    elif args.inline_cmd:
+        cmd_spec = args.inline_cmd
     else:
         print()
         our_print("< type command >")
@@ -271,7 +292,7 @@ def main():
                 continue
             lines.append(line)
             break
-        cmd_str = "\n".join(lines)
+        cmd_spec = "\n".join(lines)
 
     threads = []
     for i in range(n_opt):
@@ -282,7 +303,7 @@ def main():
 
     for i in range(args.n_params):
         p_kwargs = {k: v[i] for k, v in param_group.items()}
-        q.put((i, cmd_str, p_kwargs))
+        q.put((i, cmd_spec, p_kwargs))
 
     for _ in threads:
         q.put(EXIT_FLAG)
