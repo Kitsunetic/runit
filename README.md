@@ -59,7 +59,7 @@ CUDA_VISIBLE_DEVICES={g} python test_script.py \
 
 ### Alternative: Inline Command Execution
 
-You can also pass the command directly in one line using the `--cmd` argument or a double dash `--` separator. This is highly recommended for shell scripts and automation:
+You can also pass the command directly in one line after a double dash `--`. This is highly recommended for shell scripts and automation:
 
 ```sh
 runit -g 0 1 2 3 --category a b c d -- CUDA_VISIBLE_DEVICES={g} python test_script.py --input {category}
@@ -74,10 +74,10 @@ You don't need to type every number manually. runit supports Python-like slicing
 
 ```sh
 # Expands to 1 2 3 4 5
-runit -g 0 1 --id 1:5 --cmd "echo GPU:{g} ID:{id}"
+runit -g 0 1 --id 1:5 -- echo GPU:{g} ID:{id}
 
 # Expands to 10 8 6 4 2 (Negative step)
-runit -g 0 1 --id 10:1:-2 --cmd "echo GPU:{g} ID:{id}"
+runit -g 0 1 --id 10:1:-2 -- echo GPU:{g} ID:{id}
 ```
 
 ### 2. Reading from a File
@@ -86,7 +86,15 @@ If you have a long list of parameters, save them in a text file (one per line) a
 
 ```sh
 # Reads arguments line-by-line from targets.txt
-runit -g 0 1 2 3 --target @targets.txt --cmd "python process.py --target {target}"
+runit -g 0 1 2 3 --target @targets.txt -- python process.py --target {target}
+```
+
+You can also split `@file` values across multiple machines with `--world_size` and `--rank`. Each machine processes only its own contiguous chunk from the file-backed parameter list.
+
+```sh
+# Machine 0 processes the first half, machine 1 processes the second half
+runit -g 0 1 --world_size 2 --rank 0 --target @targets.txt -- python process.py --target {target}
+runit -g 0 1 --world_size 2 --rank 1 --target @targets.txt -- python process.py --target {target}
 ```
 
 ### 3. Execution Timeout
@@ -95,7 +103,7 @@ Use --timeout <seconds> to automatically kill tasks that hang or take too long t
 
 ```sh
 # Automatically kills any task taking longer than 3600 seconds (1 hour)
-runit -g 0 1 --dataset a b c --timeout 3600 --cmd "python train.py --data {dataset}"
+runit -g 0 1 --dataset a b c --timeout 3600 -- python train.py --data {dataset}
 ```
 
 

@@ -1,0 +1,440 @@
+This file is a merged representation of a subset of the codebase, containing specifically included files and files not matching ignore patterns, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of a subset of the repository's contents that is considered the most important context.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Only files matching these patterns are included: **.py, **.md
+- Files matching these patterns are excluded: test_script.py
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+runit/
+  __init__.py
+  runit.py
+README.md
+setup.py
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="runit/__init__.py">
+
+</file>
+
+<file path="README.md">
+# runit-parallel
+
+*Rise from a cup of beer.* 🍺
+
+A **simple, zero-dependency** command-line tool for scheduling multiple commands with limited resources, inspired by `GNU parallel`.
+
+
+## 🚀 Installation
+
+```sh
+pip install git+https://github.com/Kitsunetic/runit.git
+```
+
+
+### ✨ Key Features
+
+- Zero Dependencies: Built entirely with Python standard libraries.
+- Resource Management: Keeps your limited resources (like GPUs) constantly working without idle time.
+- Smart Expansion: Automatically expands ranges (e.g., 1:5) and reads arguments from text files (@args.txt).
+- Timeout Support: Prevent hanging tasks with the --timeout option.
+- Inline Execution: Pass commands directly without waiting for a prompt.
+
+
+
+# 📖 How it Works
+
+runit separates your inputs into two concepts:
+
+1. Options (Resources): Prefixed with a single dash - (e.g., -g 0 1 2 3). These act as the "workers" (like threads, CPUs, or GPUs).
+1. Parameters (Tasks): Prefixed with a double dash -- (e.g., --category a b c). These are the actual jobs to be processed.
+
+Note: You can specify multiple groups for options and parameters, but the number of items within each type must match.
+
+
+## 💻 Usage Example
+
+Imagine you have 4 GPUs and 20 test scripts to run. You want to process all jobs using a single command, keeping the GPUs fully occupied.
+
+### Step 1: Define Resources and Tasks
+
+```sh
+runit -g 0 1 2 3 \
+    --category \
+        a b c d e f g h i j \
+        k l m n o p q r s t \
+    --log logs/runit/{category}-{g}.log
+```
+
+### Step 2: Type the Command
+
+After running the above, runit will prompt you to type the command to execute. Use `{g}` and `{category}` as placeholders.
+(Multi-line commands are supported by appending `\` at the end of the line).
+
+```sh
+< type command >
+CUDA_VISIBLE_DEVICES={g} python test_script.py \
+--input {category}
+```
+
+### Alternative: Inline Command Execution
+
+You can also pass the command directly in one line after a double dash `--`. This is highly recommended for shell scripts and automation:
+
+```sh
+runit -g 0 1 2 3 --category a b c d -- CUDA_VISIBLE_DEVICES={g} python test_script.py --input {category}
+```
+
+
+## 🛠 Advanced Features
+
+### 1. Value Expansion (Pythonic Ranges)
+
+You don't need to type every number manually. runit supports Python-like slicing syntax start:end or start:end:step.
+
+```sh
+# Expands to 1 2 3 4 5
+runit -g 0 1 --id 1:5 -- echo GPU:{g} ID:{id}
+
+# Expands to 10 8 6 4 2 (Negative step)
+runit -g 0 1 --id 10:1:-2 -- echo GPU:{g} ID:{id}
+```
+
+### 2. Reading from a File
+
+If you have a long list of parameters, save them in a text file (one per line) and use the @ prefix.
+
+```sh
+# Reads arguments line-by-line from targets.txt
+runit -g 0 1 2 3 --target @targets.txt -- python process.py --target {target}
+```
+
+### 3. Execution Timeout
+
+Use --timeout <seconds> to automatically kill tasks that hang or take too long to complete.
+
+```sh
+# Automatically kills any task taking longer than 3600 seconds (1 hour)
+runit -g 0 1 --dataset a b c --timeout 3600 -- python train.py --data {dataset}
+```
+
+
+# 🧪 Testing & Verification
+
+### Scenario A: Basic Parallelism & Ranges
+
+Run 5 tasks using 3 threads, where each task sleeps for 1-5 seconds.
+
+```sh
+python runit/runit.py -n 3 --val 1 2 1 2 1 2 -- python test_script.py -w {n} -a {val}
+```
+
+### Scenario B: Resource Mapping & Logging
+
+Map tasks to specific "GPU" IDs and save output to log files.
+
+```sh
+python runit/runit.py -g 0 1 --task_id A B C D -- python test_script.py -w GPU_{g} -a 2
+```
+
+### Scenario C: Timeout Verification
+
+Force a task to fail if it takes longer than 2 seconds.
+
+```sh
+python runit/runit.py -n 2 --val 1:3 -- python test_script.py -w {n} -a {val}
+```
+</file>
+
+<file path="setup.py">
+from setuptools import find_packages, setup
+
+with open("README.md", "r", encoding="utf-8") as f:
+    long_description = f.read()
+
+setup(
+    name="runit-parallel",
+    version="0.0.9",
+    description="A simple command-line tool for scheduling multiple commands with limited resources.",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    author="Kitsunetic",
+    author_email="jh.shim.gg@gmail.com",
+    url="https://github.com/Kitsunetic/runit",
+    packages=find_packages(),
+    zip_safe=False,
+    python_requires=">=3.6",
+    entry_points={
+        "console_scripts": [
+            "runit=runit.runit:main",
+        ],
+    },
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Environment :: Console",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Science/Research",
+        "Programming Language :: Python :: 3",
+        "Operating System :: OS Independent",
+        "Topic :: Utilities",
+    ],
+)
+</file>
+
+<file path="runit/runit.py">
+#!/usr/bin/env python
+
+import argparse
+import math
+import subprocess as sp
+import sys
+import threading
+from collections import defaultdict
+from pathlib import Path
+from queue import Queue
+
+EXIT_FLAG = 7150297589271389562308946091234730894710298437
+q = Queue()
+
+
+def expand_value(val):
+    if val.startswith("@"):
+        file_path = Path(val[1:])
+        if file_path.is_file():
+            with open(file_path, "r", encoding="utf-8") as f:
+                return [line.strip() for line in f if line.strip()]
+
+    if ":" in val:
+        parts = val.split(":")
+        try:
+            if len(parts) == 2:
+                start, end = int(parts[0]), int(parts[1])
+                step = 1 if start <= end else -1
+                return [str(i) for i in range(start, end + step, step)]
+            elif len(parts) == 3:
+                start, end, step = int(parts[0]), int(parts[1]), int(parts[2])
+                if step > 0:
+                    return [str(i) for i in range(start, end + 1, step)]
+                elif step < 0:
+                    return [str(i) for i in range(start, end - 1, step)]
+        except ValueError:
+            pass
+    return [val]
+
+
+def getopt():
+    argv = sys.argv[1:]
+    inline_cmd = None
+
+    if "--cmd" in argv:
+        our_print("Error: `--cmd` is no longer supported. Put the command after `--`.")
+        sys.exit(1)
+
+    if "--" in argv:
+        idx = argv.index("--")
+        cmd_parts = argv[idx + 1 :]
+        argv = argv[:idx]
+        if not cmd_parts:
+            our_print("Error: Command must follow `--`.")
+            sys.exit(1)
+        inline_cmd = " ".join(cmd_parts)
+
+    parser = argparse.ArgumentParser(description="runit: scheduling multiple commands with limited resources")
+    parser.add_argument(
+        "-n", "--n-threads", type=int, help="Number of parallel threads (used if no other options are provided)"
+    )
+    parser.add_argument("--log", type=str, help="Log file path format")
+    parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for each command")
+
+    args, unknown = parser.parse_known_args(argv)
+    args.inline_cmd = inline_cmd
+
+    param_group = defaultdict(list)
+    opt_group = defaultdict(list)
+
+    key, flag = None, True
+    for k in unknown:
+        if k.startswith("--"):
+            key, flag = k[2:], True
+        elif k.startswith("-"):
+            key, flag = k[1:], False
+        elif key is not None:
+            expanded_vals = expand_value(k)
+            if flag:
+                param_group[key].extend(expanded_vals)
+            else:
+                opt_group[key].extend(expanded_vals)
+
+    # 핵심 로직: 만약 옵션(-g 등)이 없고 -n이 지정되었다면 자동으로 생성
+    if not opt_group and args.n_threads:
+        opt_group["n"] = [str(i) for i in range(args.n_threads)]
+
+    if not opt_group:
+        our_print("Error: Need at least one option (e.g., -g 0 1) or -n <threads>")
+        sys.exit(1)
+
+    return args, param_group, opt_group
+
+
+def our_print(*msgs, **kwargs):
+    if msgs:
+        msg = "\033[1;33;44m" + " ".join(msgs) + "\033[0m"
+        print(msg, **kwargs)
+    else:
+        print(**kwargs)
+
+
+def len_int(x):
+    return math.ceil(math.log10(x + 1)) if x > 0 else 1
+
+
+def print_param_group(pg):
+    if not pg:
+        return
+    maxlen = max([len(k) for k in pg])
+    for k, v in pg.items():
+        display_v = f"[{v[0]}, {v[1]}, ..., {v[-1]}] (total: {len(v)})" if len(v) > 10 else str(v)
+        our_print(("{k:%d}: {v}" % maxlen).format(k=k, v=display_v))
+
+
+def check_param_group(pg):
+    if not pg:
+        return True
+    lens = [len(pg[k]) for k in pg]
+    return all(l == lens[0] for l in lens)
+
+
+def t_func(rank, args, **t_kwargs):
+    while True:
+        x = q.get()
+        if x == EXIT_FLAG:
+            break
+
+        i, cmd_str, p_kwargs = x
+        full_kwargs = {**t_kwargs, **p_kwargs}
+
+        try:
+            cmd_t = cmd_str.format(**full_kwargs)
+        except KeyError as e:
+            our_print(f"Error: Missing placeholder {e} in command.")
+            break
+
+        l = len_int(args.n_params - 1)
+        msg = "[thread {rank} [{i:0%dd}/{n_params:0%dd}]] {cmd_t}" % (l, l)
+        our_print(msg.format(rank=rank, i=i + 1, n_params=args.n_params, cmd_t=cmd_t))
+
+        outpipe = sys.stdout
+        if args.log:
+            log_file = Path(args.log.format(**full_kwargs))
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            outpipe = open(log_file, "a")
+
+        try:
+            sp.run(cmd_t.replace("\n", " "), shell=True, stdout=outpipe, stderr=outpipe, stdin=sp.DEVNULL, timeout=args.timeout)
+        except sp.TimeoutExpired:
+            our_print(f"[thread {rank}] TIMEOUT ({args.timeout}s): {cmd_t}")
+        finally:
+            if outpipe != sys.stdout:
+                outpipe.close()
+
+
+def main():
+    args, param_group, opt_group = getopt()
+
+    our_print("< param groups >")
+    if param_group:
+        print_param_group(param_group)
+        if not check_param_group(param_group):
+            our_print("Error: Parameter counts mismatch.")
+            sys.exit(1)
+    else:
+        our_print("No parameters provided.")
+
+    args.n_params = max([len(k) for k in param_group.values()]) if param_group else 0
+
+    our_print("< opt groups >")
+    print_param_group(opt_group)
+    if not check_param_group(opt_group):
+        our_print("Error: Option counts mismatch.")
+        sys.exit(1)
+
+    n_opt = max([len(k) for k in opt_group.values()])
+
+    if args.inline_cmd:
+        cmd_str = args.inline_cmd
+    else:
+        print()
+        our_print("< type command >")
+        lines = []
+        while True:
+            line = input()
+            if not line:
+                break
+            if line.endswith("\\"):
+                lines.append(line[:-1])
+                continue
+            lines.append(line)
+            break
+        cmd_str = "\n".join(lines)
+
+    threads = []
+    for i in range(n_opt):
+        t_kwargs = {k: v[i] for k, v in opt_group.items()}
+        t = threading.Thread(target=t_func, args=(i, args), kwargs=t_kwargs, daemon=True)
+        threads.append(t)
+        t.start()
+
+    for i in range(args.n_params):
+        p_kwargs = {k: v[i] for k, v in param_group.items()}
+        q.put((i, cmd_str, p_kwargs))
+
+    for _ in threads:
+        q.put(EXIT_FLAG)
+    for t in threads:
+        t.join()
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
+</files>

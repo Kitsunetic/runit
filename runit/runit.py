@@ -13,12 +13,26 @@ EXIT_FLAG = 7150297589271389562308946091234730894710298437
 q = Queue()
 
 
-def expand_value(val):
+def split_into_rank_chunk(values, world_size, rank):
+    if world_size == 1:
+        return values
+
+    n = len(values)
+    base, rem = divmod(n, world_size)
+    start = rank * base + min(rank, rem)
+    end = start + base + (1 if rank < rem else 0)
+    return values[start:end]
+
+
+def expand_value(val, world_size=1, rank=0, chunk_file_values=False):
     if val.startswith("@"):
         file_path = Path(val[1:])
         if file_path.is_file():
             with open(file_path, "r", encoding="utf-8") as f:
-                return [line.strip() for line in f if line.strip()]
+                values = [line.strip() for line in f if line.strip()]
+            if chunk_file_values:
+                return split_into_rank_chunk(values, world_size, rank)
+            return values
 
     if ":" in val:
         parts = val.split(":")
@@ -40,25 +54,39 @@ def expand_value(val):
 
 def getopt():
     argv = sys.argv[1:]
-    cmd_from_dash = None
+    inline_cmd = None
+
+    if "--cmd" in argv:
+        our_print("Error: `--cmd` is no longer supported. Put the command after `--`.")
+        sys.exit(1)
 
     if "--" in argv:
         idx = argv.index("--")
         cmd_parts = argv[idx + 1 :]
         argv = argv[:idx]
-        cmd_from_dash = " ".join(cmd_parts)
+        if not cmd_parts:
+            our_print("Error: Command must follow `--`.")
+            sys.exit(1)
+        inline_cmd = " ".join(cmd_parts)
 
     parser = argparse.ArgumentParser(description="runit: scheduling multiple commands with limited resources")
     parser.add_argument(
         "-n", "--n-threads", type=int, help="Number of parallel threads (used if no other options are provided)"
     )
     parser.add_argument("--log", type=str, help="Log file path format")
-    parser.add_argument("--cmd", type=str, help="Command to execute")
     parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for each command")
+    parser.add_argument("--world_size", type=int, default=1, help="Split @file parameter values into this many chunks")
+    parser.add_argument("--rank", type=int, default=0, help="Process the chunk at this rank from @file parameter values")
 
     args, unknown = parser.parse_known_args(argv)
-    if cmd_from_dash:
-        args.cmd = cmd_from_dash
+    args.inline_cmd = inline_cmd
+
+    if args.world_size < 1:
+        our_print("Error: --world_size must be >= 1.")
+        sys.exit(1)
+    if not 0 <= args.rank < args.world_size:
+        our_print("Error: --rank must satisfy 0 <= rank < world_size.")
+        sys.exit(1)
 
     param_group = defaultdict(list)
     opt_group = defaultdict(list)
@@ -70,7 +98,7 @@ def getopt():
         elif k.startswith("-"):
             key, flag = k[1:], False
         elif key is not None:
-            expanded_vals = expand_value(k)
+            expanded_vals = expand_value(k, args.world_size, args.rank, chunk_file_values=flag)
             if flag:
                 param_group[key].extend(expanded_vals)
             else:
@@ -171,8 +199,8 @@ def main():
 
     n_opt = max([len(k) for k in opt_group.values()])
 
-    if args.cmd:
-        cmd_str = args.cmd
+    if args.inline_cmd:
+        cmd_str = args.inline_cmd
     else:
         print()
         our_print("< type command >")
