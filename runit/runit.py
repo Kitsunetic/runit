@@ -24,16 +24,7 @@ def split_into_rank_chunk(values, world_size, rank):
     return values[start:end]
 
 
-def expand_value(val, world_size=1, rank=0, chunk_file_values=False):
-    if val.startswith("@"):
-        file_path = Path(val[1:])
-        if file_path.is_file():
-            with open(file_path, "r", encoding="utf-8") as f:
-                values = [line.strip() for line in f if line.strip()]
-            if chunk_file_values:
-                return split_into_rank_chunk(values, world_size, rank)
-            return values
-
+def expand_range_or_scalar(val):
     if ":" in val:
         parts = val.split(":")
         try:
@@ -43,13 +34,54 @@ def expand_value(val, world_size=1, rank=0, chunk_file_values=False):
                 return [str(i) for i in range(start, end + step, step)]
             elif len(parts) == 3:
                 start, end, step = int(parts[0]), int(parts[1]), int(parts[2])
+                if step == 0:
+                    raise ValueError("step cannot be 0")
                 if step > 0:
                     return [str(i) for i in range(start, end + 1, step)]
-                elif step < 0:
+                else:
                     return [str(i) for i in range(start, end - 1, step)]
         except ValueError:
             pass
     return [val]
+
+
+def expand_param_value(val, world_size=1, rank=0):
+    """
+    Parameter axis expansion.
+    - @file: load lines from file, then chunk by world_size/rank
+    - a:b[:c]: numeric range expansion
+    - otherwise: scalar
+    """
+    if val.startswith("@"):
+        file_path = Path(val[1:])
+        if not file_path.is_file():
+            our_print(f"Error: parameter list file not found: {file_path}")
+            sys.exit(1)
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            values = [line.strip() for line in f if line.strip()]
+
+        return split_into_rank_chunk(values, world_size, rank)
+
+    return expand_range_or_scalar(val)
+
+
+def expand_opt_value(val):
+    """
+    Worker/option axis expansion.
+    - @file is NOT allowed here
+    - a:b[:c]: numeric range expansion
+    - otherwise: scalar
+    """
+    if val.startswith("@"):
+        our_print(
+            "Error: @file is not allowed for short options / worker options. "
+            "Use long options (e.g. --input @list.txt) for parameter lists, "
+            "or use -n to control thread count."
+        )
+        sys.exit(1)
+
+    return expand_range_or_scalar(val)
 
 
 def getopt():
@@ -71,12 +103,24 @@ def getopt():
 
     parser = argparse.ArgumentParser(description="runit: scheduling multiple commands with limited resources")
     parser.add_argument(
-        "-n", "--n-threads", type=int, help="Number of parallel threads (used if no other options are provided)"
+        "-n",
+        type=int,
+        help="Number of parallel threads (used if no worker options are provided)",
     )
     parser.add_argument("--log", type=str, help="Log file path format")
     parser.add_argument("--timeout", type=int, default=None, help="Timeout in seconds for each command")
-    parser.add_argument("--world_size", type=int, default=1, help="Split @file parameter values into this many chunks")
-    parser.add_argument("--rank", type=int, default=0, help="Process the chunk at this rank from @file parameter values")
+    parser.add_argument(
+        "--world_size",
+        type=int,
+        default=1,
+        help="Split @file parameter values into this many chunks",
+    )
+    parser.add_argument(
+        "--rank",
+        type=int,
+        default=0,
+        help="Process only the chunk at this rank from @file parameter values",
+    )
 
     args, unknown = parser.parse_known_args(argv)
     args.inline_cmd = inline_cmd
@@ -87,29 +131,33 @@ def getopt():
     if not 0 <= args.rank < args.world_size:
         our_print("Error: --rank must satisfy 0 <= rank < world_size.")
         sys.exit(1)
+    if args.n_threads is not None and args.n_threads < 1:
+        our_print("Error: -n/--n-threads must be >= 1.")
+        sys.exit(1)
 
     param_group = defaultdict(list)
     opt_group = defaultdict(list)
 
-    key, flag = None, True
-    for k in unknown:
-        if k.startswith("--"):
-            key, flag = k[2:], True
-        elif k.startswith("-"):
-            key, flag = k[1:], False
+    key, is_long_opt = None, None
+    for token in unknown:
+        if token.startswith("--"):
+            key, is_long_opt = token[2:], True
+        elif token.startswith("-"):
+            key, is_long_opt = token[1:], False
         elif key is not None:
-            expanded_vals = expand_value(k, args.world_size, args.rank, chunk_file_values=flag)
-            if flag:
+            if is_long_opt:
+                expanded_vals = expand_param_value(token, args.world_size, args.rank)
                 param_group[key].extend(expanded_vals)
             else:
+                expanded_vals = expand_opt_value(token)
                 opt_group[key].extend(expanded_vals)
 
-    # 핵심 로직: 만약 옵션(-g 등)이 없고 -n이 지정되었다면 자동으로 생성
+    # worker option이 전혀 없을 때만 -n으로 thread 축 생성
     if not opt_group and args.n_threads:
         opt_group["n"] = [str(i) for i in range(args.n_threads)]
 
     if not opt_group:
-        our_print("Error: Need at least one option (e.g., -g 0 1) or -n <threads>")
+        our_print("Error: Need at least one worker option (e.g., -g 0 1) or -n <threads>")
         sys.exit(1)
 
     return args, param_group, opt_group
@@ -130,7 +178,7 @@ def len_int(x):
 def print_param_group(pg):
     if not pg:
         return
-    maxlen = max([len(k) for k in pg])
+    maxlen = max(len(k) for k in pg)
     for k, v in pg.items():
         display_v = f"[{v[0]}, {v[1]}, ..., {v[-1]}] (total: {len(v)})" if len(v) > 10 else str(v)
         our_print(("{k:%d}: {v}" % maxlen).format(k=k, v=display_v))
@@ -158,7 +206,7 @@ def t_func(rank, args, **t_kwargs):
             our_print(f"Error: Missing placeholder {e} in command.")
             break
 
-        l = len_int(args.n_params - 1)
+        l = len_int(args.n_params - 1 if args.n_params > 0 else 0)
         msg = "[thread {rank} [{i:0%dd}/{n_params:0%dd}]] {cmd_t}" % (l, l)
         our_print(msg.format(rank=rank, i=i + 1, n_params=args.n_params, cmd_t=cmd_t))
 
@@ -166,10 +214,17 @@ def t_func(rank, args, **t_kwargs):
         if args.log:
             log_file = Path(args.log.format(**full_kwargs))
             log_file.parent.mkdir(parents=True, exist_ok=True)
-            outpipe = open(log_file, "a")
+            outpipe = open(log_file, "a", encoding="utf-8")
 
         try:
-            sp.run(cmd_t.replace("\n", " "), shell=True, stdout=outpipe, stderr=outpipe, stdin=sp.DEVNULL, timeout=args.timeout)
+            sp.run(
+                cmd_t.replace("\n", " "),
+                shell=True,
+                stdout=outpipe,
+                stderr=outpipe,
+                stdin=sp.DEVNULL,
+                timeout=args.timeout,
+            )
         except sp.TimeoutExpired:
             our_print(f"[thread {rank}] TIMEOUT ({args.timeout}s): {cmd_t}")
         finally:
@@ -189,7 +244,7 @@ def main():
     else:
         our_print("No parameters provided.")
 
-    args.n_params = max([len(k) for k in param_group.values()]) if param_group else 0
+    args.n_params = max((len(v) for v in param_group.values()), default=0)
 
     our_print("< opt groups >")
     print_param_group(opt_group)
@@ -197,7 +252,7 @@ def main():
         our_print("Error: Option counts mismatch.")
         sys.exit(1)
 
-    n_opt = max([len(k) for k in opt_group.values()])
+    n_opt = max(len(v) for v in opt_group.values())
 
     if args.inline_cmd:
         cmd_str = args.inline_cmd
